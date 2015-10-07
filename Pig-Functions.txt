@@ -1,0 +1,158 @@
+EMP = LOAD 'pig/input/Employees.txt' using PigStorage(',') AS (id:int,name:chararray,designation:chararray,mgrid:int,date:chararray,salary:double,commission:float,deptid:int);
+
+DEPT = LOAD 'pig/input/dept.txt' using PigStorage(',') AS (deptid:int,name:chararray);
+
+JOIN
+EMPDEPT = JOIN EMP BY deptid, DEPT BY deptid;
+
+SORT
+SORTJOIN = ORDER EMPDEPT BY id;
+SORTJOIN = ORDER EMPDEPT BY DEPT::name;
+
+SELECT COLUMNS
+beginning = foreach EMPDEPT generate ..EMP::date;
+beginning = foreach EMPDEPT generate EMP::id..DEPT::deptid;
+
+SELECT COLUMNS IN JOIN
+JOINOP = foreach EMPDEPT generate EMP::id,EMP::name,EMP::designation,EMP::mgrid,EMP::date,EMP::salary,EMP::commission,DEPT::name;
+
+ARITHMETIC OPERATIONS
+ARITH = foreach EMPDEPT generate (float)EMP::salary * EMP::commission;
+
+GROUP
+GROUPDEPT = GROUP JOINOP BY DEPT::name;
+GROUPDEPT: {group: chararray,JOINOP: {(EMP::id: int,EMP::name: chararray,EMP::designation: chararray,EMP::mgrid: int,EMP::date: chararray,EMP::salary: double,EMP::commission: float,DEPT::name: chararray)}}
+
+GROUP ALL
+GROUPALL = GROUP EMP ALL;
+GROUPALL: {group: chararray,EMP: {(id: int,name: chararray,designation: chararray,mgrid: int,date: chararray,salary: double,commission: float,deptid: int)}}
+
+
+
+GROUP SELECT COLUMNS
+GROUPSELECT = foreach GROUPDEPT generate JOINOP.(DEPT::name,EMP::name);
+({(BI,rohit)})
+({(HR,kiran),(HR,venkat),(HR,nikhil),(HR,sadiq)})
+({(sales,karthik),(sales,mohan),(sales,ln)})
+({(finance,sai),(finance,shrey)})
+({(support,sai kiran)})
+
+GROUPSELECT = foreach GROUPDEPT generate JOINOP.DEPT::name,JOINOP.(EMP::name,EMP::salary);
+({(BI)},{(rohit,10000.0)})
+({(HR),(HR),(HR),(HR)},{(kiran,9000.0),(venkat,9000.0),(nikhil,8000.0),(sadiq,15000.0)})
+({(sales),(sales),(sales)},{(karthik,11000.0),(mohan,10000.0),(ln,15000.0)})
+({(finance),(finance)},{(sai,10000.0),(shrey,10000.0)})
+({(support)},{(sai kiran,9500.0)})
+
+FILTER
+FILTERTEST = FILTER JOINOP BY EMP::salary > 10000.0;
+
+FILTERTEST = FILTER JOINOP BY (EMP::name MATCHES '.*s.*');
+or
+FILTERTEST = FILTER JOINOP BY (EMP::name MATCHES 's.*'); --starts with
+(10,sadiq,manager,10,01/01/2015,15000.0,10.5,HR)
+(1,sai,trainee,10,01/01/2015,10000.0,10.5,finance)
+(7,shrey,trainee,10,01/01/2015,10000.0,10.5,finance)
+(6,sai kiran,trainee,10,01/01/2015,9500.0,10.5,support)
+
+GROUP COUNT
+GROUPCOUNT = foreach GROUPDEPT generate group, COUNT(JOINOP);
+(BI,1)
+(HR,4)
+(sales,3)
+(finance,2)
+(support,1)
+
+------------------------------
+EXAMPLES
+
+divs    = load 'NYSE_dividends';
+first10 = limit divs 10;
+
+
+
+divs = load 'NYSE_dividends'; some = sample divs 0.1;
+
+
+
+--parallel.pig
+daily   = load 'NYSE_daily' as (exchange, symbol, date, open, high, low, close,
+            volume, adj_close);
+bysymbl = group daily by symbol parallel 10;
+average = foreach bysymbl generate group, AVG(daily.close) as avg;
+sorted  = order average by avg desc parallel 2;
+------------------------------------------
+
+COGROUP
+COGROUP - group 2 tables at a time
+E = Load 'pig/input/emp.txt' using PigStorage(',') AS (id:int,name:chararray,deptid:int);
+D = Load 'pig/input/dept.txt' using PigStorage(',') AS (id:int,name:chararray);
+J = JOIN E BY deptid, D BY id;
+
+COGROUPDEPT = COGROUP JOINOP BY DEPT::name, J BY D::name;
+
+UNION
+UNIONEMP = UNION EMP, E;
+schema unknown
+not necessary same schema
+
+LIMIT
+LIMIT10 = LIMIT UNIONEMP 10;
+
+TOKENIZE
+VARTOKEN = LOAD 'pig/input/dept.txt' AS (f1:chararray);
+TOKENZE = FOREACH VARTOKEN GENERATE TOKENIZE(f1);
+
+describe TOKENZE;
+TOKENZE: {bag_of_tokenTuples_from_f1: {tuple_of_tokens: (token: chararray)}}
+
+o/p
+({(101),(HR)})
+({(104),(support)})
+({(102),(sales)})
+({(103),(finance)})
+({(105),(BI)})
+
+FLATTEN
+unnests tuples and bags
+
+tuples -- (a, (b, c))  GENERATE $0, flatten($1)----> (a, b, c).
+bags --  ({(b,c),(d,e)})  GENERATE flatten($0) --> (b,c) and (d,e)
+            (a, {(b,c), (d,e)}) GENERATE $0, flatten($1) --> (a, b, c) and (a, d, e)
+
+
+COGROUPDEPT: {group: chararray,JOINOP: {(EMP::id: int,EMP::name: chararray,EMP::designation: chararray,EMP::mgrid: int,EMP::date: chararray,EMP::salary: double,EMP::commission: float,DEPT::name: chararray)},J: {(E::id: int,E::name: chararray,E::deptid: int,D::id: int,D::name: chararray)}}
+
+
+FLATTENTEST = FOREACH COGROUPDEPT GENERATE group, FLATTEN(JOINOP);
+only JOINOP results
+
+ FLATTENTEST = FOREACH COGROUPDEPT GENERATE group, FLATTEN(J), FLATTEN(JOINOP);
+cross join made on deptname
+FLATTENTEST: {group: chararray,J::E::id: int,J::E::name: chararray,J::E::d
+eptid: int,J::D::id: int,J::D::name: chararray,JOINOP::EMP::id: int,JOINOP::EMP::name: chararray,JOINOP::EMP::designation: chararray,JOINOP::EMP::mgrid: int,JOINOP::EMP::date: chararray,JOINOP::EMP::salary: double,JOINOP::EMP::commission: float,JOINOP::DEPT::name: chararray}
+
+TOBAG
+TOBAGTEST = FOREACH D GENERATE TOBAG(id,name);
+({(101),(HR)})
+({(104),(support)})
+({(102),(sales)})
+({(103),(finance)})
+({(105),(BI)})
+
+TOTUPLE
+TOTUPLETEST = FOREACH E GENERATE TOTUPLE(id,name,deptid);
+                                   
+o/p
+((1003,shrey,101))
+((1001,kiran,102))
+((1001,sai,101))
+((1004,saurabh,103))
+((1005,rakesh,102))
+((1006,tandan,105))
+
+UDF
+REGISTER PigUDFFilter-0.0.1-SNAPSHOT.jar;
+define filterid com.cloudwick.hadoop.PigUDFFilter.FilterTest();
+FILTERUDF = FILTER E BY filterid(*);
+

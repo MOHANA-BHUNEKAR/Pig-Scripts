@@ -1,0 +1,2 @@
+(101,sales)
+(102,marketing)
